@@ -142,7 +142,15 @@ namespace NifPatcher {
             foreach(var shape in shapes.Values) {
                 shape.Save();
             }
-            nif.Save(newPath);
+            // optimize or sortBlocks corrupts bound bow
+            // references have wrong types and trying save in NifSkope fails
+
+            // In general it's best to not reorder blocks, as that is not the purpose of this patcher anyway.
+            nif.Save(newPath, new NifSaveOptions {
+                optimize = false,
+                sortBlocks = false
+            })
+            ;
             return true;
         }
 
