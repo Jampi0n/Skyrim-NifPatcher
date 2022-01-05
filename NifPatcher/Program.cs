@@ -28,9 +28,22 @@ namespace NifPatcher {
         }
 
         public static void RunPatch(IPatcherState<ISkyrimMod, ISkyrimModGetter> state) {
+
+            var outPath = Settings.outPath.Replace("%DATA%", state.DataFolderPath);
+            var rootPath = Settings.rootPath.Replace("%DATA%", state.DataFolderPath);
+
+            Console.WriteLine();
+
+            var outNifFiles = Directory.GetFiles(outPath, "*.nif", SearchOption.AllDirectories);
+            if(outNifFiles.Length > 0) {
+                Console.WriteLine("Warning! " + outNifFiles.Length + " .nif files were detected in the output directory. If the patcher tries to overwrite an existing .nif file in the output directory, the patcher will fail.");
+                Console.WriteLine();
+            }
+
             var stopwatch = Stopwatch.StartNew();
-            var ruleFiles = Directory.GetFiles(Settings.ruleDirectory, "*.txt", SearchOption.AllDirectories);
+            var ruleFiles = Directory.GetFiles(Settings.ruleDirectory.Replace("%DATA%", state.DataFolderPath), "*.txt", SearchOption.AllDirectories);
             foreach(var ruleFile in ruleFiles) {
+                Console.WriteLine("Parsing rule file " + ruleFile + " ...");
                 var lines = File.ReadAllLines(ruleFile);
                 try {
                     RuleParser.ParseRuleBlock(lines);
@@ -40,25 +53,47 @@ namespace NifPatcher {
             }
             Console.WriteLine();
 
-            var inFiles = Directory.GetFiles(Settings.inPath, "*.nif", SearchOption.AllDirectories);
+            var inPaths = Settings.inPaths.ToList();
 
+            if(inPaths.Count == 0) {
+                inPaths.Add("");
+            }
+
+            string[] inFiles;
+            var inFilesList = new List<string>();
+            foreach(var inPath in inPaths) {
+                var newPath = Path.Combine(Settings.rootPath, inPath).Replace("%DATA%", state.DataFolderPath);
+                inFilesList.AddRange(Directory.GetFiles(newPath, "*.nif", SearchOption.AllDirectories));
+            }
+            inFiles = inFilesList.ToArray();
             int progressCounter = 0;
-            Parallel.For(0, inFiles.Length, new ParallelOptions() {
-                MaxDegreeOfParallelism = 8,
-            }, (i) => {
-                var inFile = inFiles[i];
-                var relativePath = Path.GetRelativePath(Settings.inPath, inFile);
-                var progress = "" + (i + 1) + "/" + inFiles.Length + ": ";
-                var nif = new NifFileWrapper(inFile);
-                if(RuleParser.PatchNif(nif)) {
-                    var outPath = Path.Combine(Settings.outPath, relativePath);
-                    Directory.CreateDirectory(Directory.GetParent(outPath)!.FullName);
-                    nif.SaveAs(outPath);
-                    Console.WriteLine(Interlocked.Increment(ref progressCounter) + "/" + inFiles.Length + " " + relativePath + " saved");
-                } else {
-                    Console.WriteLine(Interlocked.Increment(ref progressCounter) + "/" + inFiles.Length + " " + relativePath + " no changed");
+            try {
+                Parallel.For(0, inFiles.Length, new ParallelOptions() {
+                    MaxDegreeOfParallelism = 8,
+                }, (i) => {
+                    var inFile = inFiles[i];
+                    var relativePath = Path.GetRelativePath(rootPath, inFile);
+                    var progress = "" + (i + 1) + "/" + inFiles.Length + ": ";
+                    var nif = new NifFileWrapper(inFile);
+                    if(RuleParser.PatchNif(nif)) {
+                        var outFile = Path.Combine(outPath, relativePath);
+                        Directory.CreateDirectory(Directory.GetParent(outFile)!.FullName);
+                        if(!nif.SaveAs(outFile, false)) {
+                            Console.WriteLine("    " + Interlocked.Increment(ref progressCounter) + "/" + inFiles.Length + " " + relativePath + " already exists in output directory");
+                            throw new IOException("Tried to overwrite an existing .nif file in the output directory.");
+                        } else {
+                            Console.WriteLine("    " + Interlocked.Increment(ref progressCounter) + "/" + inFiles.Length + " " + relativePath + " saved");
+                        }
+                    } else {
+                        Console.WriteLine("    " + Interlocked.Increment(ref progressCounter) + "/" + inFiles.Length + " " + relativePath + " no change");
+                    }
+                });
+            } catch(AggregateException e) {
+                foreach(var inner in e.InnerExceptions) {
+                    throw inner;
                 }
-            });
+            }
+
             stopwatch.Stop();
             Console.WriteLine(stopwatch.ElapsedMilliseconds + "ms");
         }

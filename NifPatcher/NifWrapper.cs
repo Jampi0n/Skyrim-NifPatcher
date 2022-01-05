@@ -5,6 +5,7 @@ using System.Text;
 using System.Threading.Tasks;
 using nifly;
 using System.Drawing;
+using System.IO;
 
 namespace NifPatcher {
 
@@ -132,11 +133,17 @@ namespace NifPatcher {
             }
         }
 
-        public void SaveAs(string newPath) {
+        public bool SaveAs(string newPath, bool overwrite) {
+            if(!overwrite) {
+                if(File.Exists(newPath)) {
+                    return false;
+                }
+            }
             foreach(var shape in shapes.Values) {
                 shape.Save();
             }
             nif.Save(newPath);
+            return true;
         }
 
         public int GetNumShapes() {
