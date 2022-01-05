@@ -1,0 +1,8 @@
+{
+  "Nickname": "NifPatcher",
+  "Visibility": "Visible",
+  "OneLineDescription": "Diffuse texture based nif patcher.",
+  "LongDescription": "Edits nif fields such as textures, shader types, shader parameters, shader flags based on the diffuse texture used by the shape. This can for example be used to perform the same nif changes on all shapes that use iron textures, making it easy to have consistent shaders across one material. For mod authors it can be used to create patches for geometry changing mods such as Weapon or Armor reshapes.",
+  "PreferredAutoVersioning": "Default",
+  "RequiredMods": []
+}
