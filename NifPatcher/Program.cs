@@ -75,7 +75,7 @@ namespace NifPatcher {
                     var relativePath = Path.GetRelativePath(rootPath, inFile);
                     var progress = "" + (i + 1) + "/" + inFiles.Length + ": ";
                     var nif = new NifFileWrapper(inFile);
-                    if(RuleParser.PatchNif(nif)) {
+                    if(RuleParser.PatchNif(nif, relativePath)) {
                         var outFile = Path.Combine(outPath, relativePath);
                         Directory.CreateDirectory(Directory.GetParent(outFile)!.FullName);
                         if(!nif.SaveAs(outFile, false)) {

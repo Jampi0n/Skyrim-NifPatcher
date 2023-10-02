@@ -21,24 +21,31 @@ namespace NifPatcher {
         private static string currentKey = "";
 
         private class RuleSet {
-            public static readonly Dictionary<string, RuleSet> diffuseRules = new();
+            public static readonly Dictionary<string, List<RuleSet>> diffuseRules = new();
             public readonly Dictionary<string, Tuple<string, Func<NifFileWrapper.NiShapeWrapper, bool>>> rules = new();
+            public readonly List<string> rulesOrder = new();
             public string pathFilter = "";
             public void SetRule(string s, Func<NifFileWrapper.NiShapeWrapper, bool> func) {
+                if(!rules.ContainsKey(currentKey)) {
+                    rulesOrder.Add(currentKey);
+                }
                 rules[currentKey] = new Tuple<string, Func<NifFileWrapper.NiShapeWrapper, bool>>(s, func);
             }
 
             public RuleSet Clone() {
                 var clone = new RuleSet();
-                foreach(var key in rules.Keys) {
+                foreach(var key in rulesOrder) {
+                    clone.rulesOrder.Add(key);
                     clone.rules[key] = new Tuple<string, Func<NifFileWrapper.NiShapeWrapper, bool>>(rules[key].Item1, rules[key].Item2);
                 }
+                clone.pathFilter = pathFilter;
                 return clone;
             }
 
             public bool Apply(NifFileWrapper.NiShapeWrapper shape) {
                 var modified = false;
-                foreach(var rule in rules.Values) {
+                foreach(var ruleKey in rulesOrder) {
+                    var rule = rules[ruleKey];
                     var tmp = rule.Item2(shape);
                     modified = tmp || modified;
                 }
@@ -381,17 +388,45 @@ namespace NifPatcher {
                 });
             });
 
+
+            AddParseRule("PathReplace", (string s, RuleSet ruleSet) => {
+                var tmp = s.Split(":");
+                if(tmp.Length != 2) {
+                    throw new Exception("PathReplace must contain one \":\".");
+                }
+                var search = tmp[0];
+                var replace = tmp[1];
+
+
+                ruleSet.SetRule(s, (NifFileWrapper.NiShapeWrapper shape) => {
+                    var modified = false;
+                    for(int i = 0; i < 8; ++i) {
+                        var t = shape.GetTextureSlot((TextureId)i);
+                        var newT = t.Replace(search, replace);
+                        if(t != newT) {
+                            modified = true;
+                            shape.SetTextureSlot((TextureId)i, newT);
+                        }
+                    }
+                    return modified;
+                });
+            });
+
             // rule condition
 
             AddParseRule("Diffuse", (string s, RuleSet ruleSet) => {
                 var tmp = ruleSet.Clone();
-                RuleSet.diffuseRules[s] = tmp;
+                if(!RuleSet.diffuseRules.ContainsKey(s)) {
+                    RuleSet.diffuseRules[s] = new List<RuleSet>();
+                }
+                RuleSet.diffuseRules[s].Add(tmp);
             });
 
 
             AddParseRule("PathFilter", (string s, RuleSet ruleSet) => {
                 ruleSet.pathFilter = s;
             });
+
 
         }
 
@@ -416,19 +451,25 @@ namespace NifPatcher {
                     parseRules[key](value, ruleSet);
                 } else {
                     ruleSet.rules.Remove(key);
+                    ruleSet.rulesOrder.Remove(key);
                 }
 
             }
         }
 
-        public static bool PatchNif(NifFileWrapper nif) {
+        public static bool PatchNif(NifFileWrapper nif, string relativePath) {
             var modified = false;
             for(var i = 0; i < nif.GetNumShapes(); ++i) {
                 var shape = nif.GetShape(i);
                 var diffuse = shape.DiffuseMap.ToLower();
                 if(RuleSet.diffuseRules.ContainsKey(diffuse)) {
-                    var tmp = RuleSet.diffuseRules[diffuse].Apply(shape);
-                    modified = tmp || modified;
+                    var rules = RuleSet.diffuseRules[diffuse];
+                    foreach(var rule in rules) {
+                        if(rule.pathFilter == "" || relativePath.Split("\\").Contains(rule.pathFilter)) {
+                            var tmp = rule.Apply(shape);
+                            modified = tmp || modified;
+                        }
+                    }
                 }
             }
             return modified;
